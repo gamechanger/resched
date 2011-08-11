@@ -26,6 +26,13 @@ class Scheduler(object):
     >>> scheduler.reschedule_dropped_items()
     >>> scheduler.is_scheduled(value)
     True
+    >>> scheduler.pop_due() == value
+    True
+    >>> scheduler.mark_completed(value)
+    >>> time.sleep(1)
+    >>> scheduler.reschedule_dropped_items()
+    >>> scheduler.is_scheduled(value)
+    False
     """
 
     SCHEDULED = 'schedule.waiting'
@@ -46,7 +53,7 @@ class Scheduler(object):
     def _clear_value(self, value):
         with self.server.pipeline() as pipe:
             pipe.multi()
-            pipe.zrem(self.SCHEDULED, value).zrem(INPROGRESS, value).hrem(EXPROGRESS, value).hrem(EXPIRES, value)
+            pipe.zrem(self.SCHEDULED, value).zrem(self.INPROGRESS, value).hdel(self.EXPROGRESS, value).hdel(self.EXPIRES, value)
             pipe.execute()
 
     def schedule(self, value, fire_datetime, expire_datetime=None):
