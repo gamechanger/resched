@@ -7,7 +7,7 @@ class Scheduler(object):
     """
     >>> import datetime
     >>> import time
-    >>> scheduler = Scheduler('localhost', name='foo')
+    >>> scheduler = Scheduler(redis.Redis('localhost'), name='foo')
     >>> value = 'foo'
     >>> scheduler.schedule(value, datetime.datetime.now()+datetime.timedelta(seconds=1))
     >>> scheduler.is_scheduled(value)
@@ -37,22 +37,17 @@ class Scheduler(object):
     False
     """
 
-    SCHEDULED = 'schedule.waiting'
-    INPROGRESS = 'schedule.inprogress'
-    EXPROGRESS = 'schedule.exprogress'
-    EXPIRES = 'schedule.expirations'
-
     PROGRESS_TTL_SECONDS = 60
 
-    def __init__(self, host, port=None, name=None):
-        kwargs = {'host': host}
-        if port: kwargs['port'] = port
-        self.server = redis.Redis(**kwargs)
-        if name:
-            self.SCHEDULED = 'schedule.{0}.waiting'.format(name)
-            self.INPROGRESS = 'schedule.{0}.inprogress'.format(name)
-            self.EXPROGRESS = 'schedule.{0}.exprogress'.format(name)
-            self.EXPIRES = 'schedule.{0}.expires'.format(name)
+    def __init__(self, redis_instance, name='main'):
+        """
+        """
+        self.server = redis_instance
+        assert name, "yo, bro, need to pass in a valid name, or just leave it defaulted, mkay?"
+        self.SCHEDULED = 'schedule.{0}.waiting'.format(name)
+        self.INPROGRESS = 'schedule.{0}.inprogress'.format(name)
+        self.EXPROGRESS = 'schedule.{0}.exprogress'.format(name)
+        self.EXPIRES = 'schedule.{0}.expires'.format(name)
 
     def _pre_drop_ttl(self):
         return time.time() + self.PROGRESS_TTL_SECONDS
