@@ -8,21 +8,23 @@ class Scheduler(object):
     >>> import datetime
     >>> import time
     >>> scheduler = Scheduler('localhost')
-    >>> scheduler.schedule('foo', datetime.datetime.now()+datetime.timedelta(seconds=5))
-    >>> x = scheduler.pop_due()
-    >>> x # note following line is empty... 'None'
+    >>> value = 'foo'
+    >>> scheduler.schedule(value, datetime.datetime.now()+datetime.timedelta(seconds=5))
+    >>> scheduler.is_scheduled(value)
+    True
+    >>> scheduler.pop_due() is None
+    True
     >>> time.sleep(5)
     >>> scheduler.PROGRESS_TTL_SECONDS = 1
-    >>> x = scheduler.pop_due()
-    >>> x
-    'foo'
-    >>> scheduler.is_scheduled(x)
+    >>> scheduler.pop_due() == value
+    True
+    >>> scheduler.is_scheduled(value)
     False
     >>> time.sleep(1)
-    >>> scheduler.is_scheduled(x)
+    >>> scheduler.is_scheduled(value)
     False
     >>> scheduler.reschedule_dropped_items()
-    >>> scheduler.is_scheduled(x)
+    >>> scheduler.is_scheduled(value)
     True
     """
 
