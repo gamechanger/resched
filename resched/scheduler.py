@@ -26,6 +26,8 @@ class Scheduler(object):
     >>> scheduler.reschedule_dropped_items()
     >>> scheduler.is_scheduled(value)
     True
+    >>> scheduler.peek_due() == value
+    True
     >>> scheduler.pop_due() == value
     True
     >>> scheduler.mark_completed(value)
