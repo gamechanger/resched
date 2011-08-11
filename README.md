@@ -1,6 +1,5 @@
-# resched
-## ReSched is a collection of lightweight queueing & scheduling tools built in Python on Redis
+# ReSched - Redis Scheduling in Python
 
 ### *** COMPLETE work in progress- use at your own risk. ***
 
-Build in NYC by the folks at GameChanger, in particular @kiril.
+Built in NYC by the folks at GameChanger, in particular kiril (kiril@gc.io / http://github.com/kiril).
