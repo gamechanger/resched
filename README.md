@@ -1,4 +1,4 @@
-# ReSched - Redis Scheduling in Python
+# ReSched - super simple Redis scheduling in Python
 
 ### *** COMPLETE work in progress- use at your own risk. ***
 
