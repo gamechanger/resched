@@ -9,12 +9,12 @@ class Scheduler(object):
     >>> import time
     >>> scheduler = Scheduler('localhost')
     >>> value = 'foo'
-    >>> scheduler.schedule(value, datetime.datetime.now()+datetime.timedelta(seconds=0.5))
+    >>> scheduler.schedule(value, datetime.datetime.now()+datetime.timedelta(seconds=1))
     >>> scheduler.is_scheduled(value)
     True
     >>> scheduler.pop_due() is None
     True
-    >>> time.sleep(0.5)
+    >>> time.sleep(1)
     >>> scheduler.PROGRESS_TTL_SECONDS = 0.5
     >>> scheduler.pop_due() == value
     True
@@ -50,8 +50,8 @@ class Scheduler(object):
     def _pre_drop_ttl(self):
         return time.time() + self.PROGRESS_TTL_SECONDS
 
-    def _clear_value(self, value):
-        with self.server.pipeline() as pipe:
+    def _clear_value(self, value, pipe=None):
+        with pipe or self.server.pipeline() as pipe:
             pipe.multi()
             pipe.zrem(self.SCHEDULED, value)
             pipe.zrem(self.INPROGRESS, value)
@@ -59,17 +59,32 @@ class Scheduler(object):
             pipe.hdel(self.EXPIRES, value)
             pipe.execute()
 
+    def _reschedule_value(self, value, fire_time):
+        with self.server.pipeline() as pipe:
+            pipe.multi()
+            pipe.zadd(self.SCHEDULED, value, fire_time)
+            pipe.zrem(self.INPROGRESS, value)
+            pipe.zrem(self.EXPROGRESS, value)
+            pipe.execute()
+
     def schedule(self, value, fire_datetime, expire_datetime=None):
         fire_time = time.mktime(fire_datetime.timetuple())
-        self.server.zadd(self.SCHEDULED, value, fire_time)
-        if expire_datetime:
-            self.server.hset(self.EXPIRES, value, time.mktime(expire_datetime.timetuple()))
+        with self.server.pipeline() as pipe:
+            if expire_datetime:
+                pipe.multi()
+                pipe.hset(self.EXPIRES, value, time.mktime(expire_datetime.timetuple()))
+            pipe.zadd(self.SCHEDULED, value, fire_time)
+            pipe.execute()
 
-    def deschedule(self, value):
-        self._clear_value(value)
+    def deschedule(self, value, pipe=None):
+        self._clear_value(value, pipe)
 
     def subscribe(self):
         # TODO: subscribe to schedule alerts
+        pass
+
+    def _publish(self, event, value):
+        # TODO: publish to the schedule channel(s?)
         pass
 
     def pop_due(self):
@@ -101,7 +116,7 @@ class Scheduler(object):
                         return None # guaranteed this was the earliest, so we're done here
 
                     if self.is_expired(value):
-                        self._clear_value(value)
+                        self._clear_value(value, pipe)
                         continue
 
                     pipe.multi()
@@ -118,17 +133,11 @@ class Scheduler(object):
                 finally:
                     pipe.unwatch()
 
-    def mark_completed(self, value):
-        self._clear_value(value)
+    def mark_completed(self, value, pipe=None):
+        self._clear_value(value, pipe)
 
     def is_expired(self, value):
         return self.server.hexists(self.EXPIRES, value) and self.server.hget(self.EXPIRES, value) < time.time()
-
-    def _reschedule_value(self, value, fire_time):
-        with self.server.pipeline() as pipe:
-            pipe.multi()
-            pipe.zrem(self.INPROGRESS, value).zrem(self.EXPROGRESS, value).zadd(self.SCHEDULED, value, fire_time)
-            pipe.execute()
 
     def is_inprogress(self, value):
         if not self.server.hexists(self.EXPROGRESS, value):
