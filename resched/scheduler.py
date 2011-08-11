@@ -38,11 +38,11 @@ class Scheduler(object):
 
     __PROGRESS_TTL_SECONDS = 60
 
-    def __init__(self, redis_instance, namespace='main'):
+    def __init__(self, redis_client, namespace='main'):
         """
         Create a scheduler, optionally in a custom namespace.
         """
-        self.server = redis_instance
+        self.server = redis_client
         assert namespace, "yo, bro, need to pass in a valid name, or just leave it defaulted, mkay?"
         self.SCHEDULED = 'schedule.{0}.waiting'.format(namespace)
         self.INPROGRESS = 'schedule.{0}.inprogress'.format(namespace)
