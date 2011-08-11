@@ -7,7 +7,7 @@ class Scheduler(object):
     """
     >>> import datetime
     >>> import time
-    >>> scheduler = Scheduler('localhost')
+    >>> scheduler = Scheduler('localhost', name='foo')
     >>> value = 'foo'
     >>> scheduler.schedule(value, datetime.datetime.now()+datetime.timedelta(seconds=1))
     >>> scheduler.is_scheduled(value)
@@ -44,10 +44,15 @@ class Scheduler(object):
 
     PROGRESS_TTL_SECONDS = 60
 
-    def __init__(self, host, port=None):
+    def __init__(self, host, port=None, name=None):
         kwargs = {'host': host}
         if port: kwargs['port'] = port
         self.server = redis.Redis(**kwargs)
+        if name:
+            self.SCHEDULED = 'schedule.{0}.waiting'.format(name)
+            self.INPROGRESS = 'schedule.{0}.inprogress'.format(name)
+            self.EXPROGRESS = 'schedule.{0}.exprogress'.format(name)
+            self.EXPIRES = 'schedule.{0}.expires'.format(name)
 
     def _pre_drop_ttl(self):
         return time.time() + self.PROGRESS_TTL_SECONDS
