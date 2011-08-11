@@ -53,7 +53,10 @@ class Scheduler(object):
     def _clear_value(self, value):
         with self.server.pipeline() as pipe:
             pipe.multi()
-            pipe.zrem(self.SCHEDULED, value).zrem(self.INPROGRESS, value).hdel(self.EXPROGRESS, value).hdel(self.EXPIRES, value)
+            pipe.zrem(self.SCHEDULED, value)
+            pipe.zrem(self.INPROGRESS, value)
+            pipe.hdel(self.EXPROGRESS, value)
+            pipe.hdel(self.EXPIRES, value)
             pipe.execute()
 
     def schedule(self, value, fire_datetime, expire_datetime=None):
@@ -128,7 +131,9 @@ class Scheduler(object):
             pipe.execute()
 
     def is_inprogress(self, value):
-        return self.server.hexists(self.EXPROGRESS, value) and self.server.hget(self.EXPROGRESS, value) < time.time()
+        if not self.server.hexists(self.EXPROGRESS, value):
+            return False
+        return self.server.hget(self.EXPROGRESS, value) < time.time()
 
     def is_scheduled(self, value):
         return self.server.zscore(self.SCHEDULED, value) is not None
