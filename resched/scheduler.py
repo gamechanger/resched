@@ -49,9 +49,6 @@ class Scheduler(object):
         self.EXPROGRESS = 'schedule.{0}.exprogress'.format(namespace)
         self.EXPIRES = 'schedule.{0}.expires'.format(namespace)
 
-    def _default_progress_expiry(self):
-        return time.time() + self.__PROGRESS_TTL_SECONDS
-
     def _clear_value(self, value, pipe=None):
         with pipe or self.server.pipeline() as pipe:
             pipe.multi()
@@ -70,6 +67,16 @@ class Scheduler(object):
             pipe.execute()
 
     def schedule(self, value, fire_datetime, expire_datetime=None):
+        """
+        Schedule a task (value) to become due at some future date.
+
+        value:            the 'task' (string) which will become due
+        fire_datetime:    when the thing becomes due
+        expire_datetime:  (optional) the time after which the item shouldn't be processed
+
+        * calling this multiple times will only schedule the task once, at the time
+          specified in the last call to the function.
+        """
         fire_time = time.mktime(fire_datetime.timetuple())
         with self.server.pipeline() as pipe:
             if expire_datetime:
@@ -78,8 +85,15 @@ class Scheduler(object):
             pipe.zadd(self.SCHEDULED, value, fire_time)
             pipe.execute()
 
-    def deschedule(self, value, pipe=None):
-        self._clear_value(value, pipe)
+    def deschedule(self, value):
+        """
+        Remove a future scheduled task.
+
+        value:            the 'task' (string) to remove.
+
+        * if the task isn't scheduled, no error is thrown.
+        """
+        self._clear_value(value)
 
     def subscribe(self):
         # TODO: subscribe to schedule alerts
@@ -89,9 +103,12 @@ class Scheduler(object):
         # TODO: publish to the schedule channel(s?)
         pass
 
-    def pop_due(self, progress_ttl=None):
+    def pop_due(self, progress_ttl=60, destructively=False):
         """
         Pop the next 'due' item from the Schedule.  Specifically:
+
+        progress_ttl:      (optional) the number of seconds after which an in-progress task becomes eligible for re-scheduling [60]
+        destructively:     (optional) if set to True, dequeues the item without marking as in-process. [False]
 
         * find the first non-expired, currently due item
         * put that item in in-progress collection
@@ -123,13 +140,16 @@ class Scheduler(object):
                         self._clear_value(value, pipe)
                         continue
 
-                    progress_expiry = time.time() + progress_ttl if progress_ttl else self._default_progress_expiry()
+                    progress_expiry = time.time() + progress_ttl
 
-                    pipe.multi()
-                    pipe.zrem(self.SCHEDULED, value)
-                    pipe.zadd(self.INPROGRESS, **{value: scheduled_time})
-                    pipe.hset(self.EXPROGRESS, value, progress_expiry)
-                    pipe.execute()
+                    if destructively:
+                        self._clear_value(value, pipe)
+                    else:
+                        pipe.multi()
+                        pipe.zrem(self.SCHEDULED, value)
+                        pipe.zadd(self.INPROGRESS, **{value: scheduled_time})
+                        pipe.hset(self.EXPROGRESS, value, progress_expiry)
+                        pipe.execute()
 
                     return value
 
@@ -139,8 +159,16 @@ class Scheduler(object):
                 finally:
                     pipe.unwatch()
 
-    def mark_completed(self, value, pipe=None):
-        self._clear_value(value, pipe)
+    def mark_completed(self, value):
+        """
+        Mark an in-progress task as having been completed, which will de-schedule it
+        if it's scheduled, and remove it from the in-progress set.
+
+        value:      the task (string) to mark as completed.
+
+        * this is the method you must call to prevent your task from going back into the pool later
+        """
+        self._clear_value(value)
 
     def is_expired(self, value):
         return self.server.hexists(self.EXPIRES, value) and self.server.hget(self.EXPIRES, value) < time.time()
