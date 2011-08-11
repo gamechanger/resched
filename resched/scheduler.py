@@ -9,18 +9,18 @@ class Scheduler(object):
     >>> import time
     >>> scheduler = Scheduler('localhost')
     >>> value = 'foo'
-    >>> scheduler.schedule(value, datetime.datetime.now()+datetime.timedelta(seconds=5))
+    >>> scheduler.schedule(value, datetime.datetime.now()+datetime.timedelta(seconds=0.5))
     >>> scheduler.is_scheduled(value)
     True
     >>> scheduler.pop_due() is None
     True
-    >>> time.sleep(5)
-    >>> scheduler.PROGRESS_TTL_SECONDS = 1
+    >>> time.sleep(0.5)
+    >>> scheduler.PROGRESS_TTL_SECONDS = 0.5
     >>> scheduler.pop_due() == value
     True
     >>> scheduler.is_scheduled(value)
     False
-    >>> time.sleep(1)
+    >>> time.sleep(0.5)
     >>> scheduler.is_scheduled(value)
     False
     >>> scheduler.reschedule_dropped_items()
@@ -29,7 +29,7 @@ class Scheduler(object):
     >>> scheduler.pop_due() == value
     True
     >>> scheduler.mark_completed(value)
-    >>> time.sleep(1)
+    >>> time.sleep(0.5)
     >>> scheduler.reschedule_dropped_items()
     >>> scheduler.is_scheduled(value)
     False
