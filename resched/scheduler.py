@@ -7,7 +7,7 @@ class Scheduler(object):
     """
     >>> import datetime
     >>> import time
-    >>> scheduler = Scheduler(redis.Redis('localhost'), name='foo')
+    >>> scheduler = Scheduler(redis.Redis('localhost'), namespace='foo')
     >>> value = 'foo'
     >>> scheduler.schedule(value, datetime.datetime.now()+datetime.timedelta(seconds=1))
     >>> scheduler.is_scheduled(value)
@@ -15,8 +15,7 @@ class Scheduler(object):
     >>> scheduler.pop_due() is None
     True
     >>> time.sleep(1)
-    >>> scheduler.PROGRESS_TTL_SECONDS = 0.5
-    >>> scheduler.pop_due() == value
+    >>> scheduler.pop_due(progress_ttl=0.5) == value
     True
     >>> scheduler.is_scheduled(value)
     False
@@ -37,20 +36,21 @@ class Scheduler(object):
     False
     """
 
-    PROGRESS_TTL_SECONDS = 60
+    __PROGRESS_TTL_SECONDS = 60
 
-    def __init__(self, redis_instance, name='main'):
+    def __init__(self, redis_instance, namespace='main'):
         """
+        Create a scheduler, optionally in a custom namespace.
         """
         self.server = redis_instance
-        assert name, "yo, bro, need to pass in a valid name, or just leave it defaulted, mkay?"
-        self.SCHEDULED = 'schedule.{0}.waiting'.format(name)
-        self.INPROGRESS = 'schedule.{0}.inprogress'.format(name)
-        self.EXPROGRESS = 'schedule.{0}.exprogress'.format(name)
-        self.EXPIRES = 'schedule.{0}.expires'.format(name)
+        assert namespace, "yo, bro, need to pass in a valid name, or just leave it defaulted, mkay?"
+        self.SCHEDULED = 'schedule.{0}.waiting'.format(namespace)
+        self.INPROGRESS = 'schedule.{0}.inprogress'.format(namespace)
+        self.EXPROGRESS = 'schedule.{0}.exprogress'.format(namespace)
+        self.EXPIRES = 'schedule.{0}.expires'.format(namespace)
 
-    def _pre_drop_ttl(self):
-        return time.time() + self.PROGRESS_TTL_SECONDS
+    def _default_progress_expiry(self):
+        return time.time() + self.__PROGRESS_TTL_SECONDS
 
     def _clear_value(self, value, pipe=None):
         with pipe or self.server.pipeline() as pipe:
@@ -89,7 +89,7 @@ class Scheduler(object):
         # TODO: publish to the schedule channel(s?)
         pass
 
-    def pop_due(self):
+    def pop_due(self, progress_ttl=None):
         """
         Pop the next 'due' item from the Schedule.  Specifically:
 
@@ -102,6 +102,8 @@ class Scheduler(object):
         * Popping is a constant-time operation (fast)
         * The move from Scheduled to In Progress is atomic (barring Redis catastrophic failure)
         * You've got a limited-time lock on the item, and must call mark_completed() to prevent re-queue
+        * You can govern that by passing 'progress_ttl' a custom # of seconds you'll have before your
+          job goes back into the pool.
         """
         with self.server.pipeline() as pipe:
             time_now = time.time()
@@ -121,10 +123,12 @@ class Scheduler(object):
                         self._clear_value(value, pipe)
                         continue
 
+                    progress_expiry = time.time() + progress_ttl if progress_ttl else self._default_progress_expiry()
+
                     pipe.multi()
                     pipe.zrem(self.SCHEDULED, value)
                     pipe.zadd(self.INPROGRESS, **{value: scheduled_time})
-                    pipe.hset(self.EXPROGRESS, value, self._pre_drop_ttl())
+                    pipe.hset(self.EXPROGRESS, value, progress_expiry)
                     pipe.execute()
 
                     return value
