@@ -1,5 +1,7 @@
 __author__ = 'Kiril Savino'
 
+import simplejson
+
 class ContentType(object):
     STRING = 'string'
     JSON = 'json'
