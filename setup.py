@@ -13,6 +13,6 @@ setuptools.setup(
     license="BSD",
     keywords="redis queue schedule",
     url="http://github.com/gamechanger/resched",
-    packages="resched",
+    packages=["resched"],
     long_description=read("README"),
     )
