@@ -62,14 +62,16 @@ class Queue(RedisBacked):
     0
     >>> qb.size() + qa.size()
     0
-    >>> time.sleep(1.5)
+    >>> time.sleep(1.75)
     >>> qb.number_in_progress()
     1
     >>> qb.size()
     0
-    >>> qb.reclaim_tasks()
+    >>> qa.reclaim_tasks()
     >>> qb.size()
     1
+    >>> qb.number_in_progress()
+    0
     """
 
     work_ttl_seconds = 60
@@ -105,7 +107,7 @@ class Queue(RedisBacked):
             if self.server.get(active_key):
                 continue
             working_key = 'queue.{ns}.working.{wid}'.format(ns=self.namespace, wid=worker_id)
-            while self.server.llen(working_key):
+            for x in range(self.server.llen(working_key)):
                 self.server.rpoplpush(working_key, self.QUEUE_LIST_KEY)
 
     def size(self):
