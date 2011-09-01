@@ -7,7 +7,7 @@ def read(fname):
 
 setuptools.setup(
     name="Resched",
-    version="0.0.1",
+    version="0.0.2",
     author="Kiril Savino",
     author_email="kiril@gamechanger.io",
     description="super simple Redis scheduling & queueing in Python",
