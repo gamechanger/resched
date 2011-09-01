@@ -209,7 +209,7 @@ class Scheduler(RedisBacked):
         if not next_one:
             return None
         item, scheduled_time = next_one[0]
-        return item if scheduled_time <= time.time() else None
+        return self.unpack(item) if scheduled_time <= time.time() else None
 
 
 
