@@ -1,13 +1,15 @@
 __author__ = 'Kiril Savino'
 
-import redis
 import time
+from redis import WatchError
+from base import RedisBacked
 
-class Scheduler(object):
+class Scheduler(RedisBacked):
     """
     >>> import datetime
-    >>> import time
-    >>> scheduler = Scheduler(redis.Redis('localhost'), namespace='foo')
+    >>> from redis import Redis
+    >>> from base import ContentType
+    >>> scheduler = Scheduler(Redis('localhost'), 'foo', ContentType.STRING)
     >>> value = 'foo'
     >>> scheduler.schedule(value, datetime.datetime.now()+datetime.timedelta(seconds=1))
     >>> scheduler.is_scheduled(value)
@@ -38,12 +40,11 @@ class Scheduler(object):
 
     __PROGRESS_TTL_SECONDS = 60
 
-    def __init__(self, redis_client, namespace='main'):
+    def __init__(self, redis_client, namespace, content_type):
         """
-        Create a scheduler, optionally in a custom namespace.
+        Create a scheduler, in a namespace.
         """
-        self.server = redis_client
-        assert namespace, "yo, bro, need to pass in a valid name, or just leave it defaulted, mkay?"
+        RedisBacked.__init__(self, redis_client, namespace, content_type)
         self.SCHEDULED = 'schedule.{0}.waiting'.format(namespace)
         self.INPROGRESS = 'schedule.{0}.inprogress'.format(namespace)
         self.EXPROGRESS = 'schedule.{0}.exprogress'.format(namespace)
@@ -77,6 +78,7 @@ class Scheduler(object):
         * calling this multiple times will only schedule the task once, at the time
           specified in the last call to the function.
         """
+        value = self.pack(value)
         fire_time = time.mktime(fire_datetime.timetuple())
         with self.server.pipeline() as pipe:
             if expire_datetime:
@@ -93,6 +95,7 @@ class Scheduler(object):
 
         * if the task isn't scheduled, no error is thrown.
         """
+        value = self.pack(value)
         self._clear_value(value)
 
     def subscribe(self):
@@ -101,6 +104,7 @@ class Scheduler(object):
 
     def _publish(self, event, value):
         # TODO: publish to the schedule channel(s?)
+        value = self.pack(value)
         pass
 
     def pop_due(self, progress_ttl=60, destructively=False):
@@ -151,9 +155,9 @@ class Scheduler(object):
                         pipe.hset(self.EXPROGRESS, value, progress_expiry)
                         pipe.execute()
 
-                    return value
+                    return self.unpack(value)
 
-                except redis.WatchError:
+                except WatchError:
                     continue
 
                 finally:
@@ -168,18 +172,20 @@ class Scheduler(object):
 
         * this is the method you must call to prevent your task from going back into the pool later
         """
-        self._clear_value(value)
+        self._clear_value(self.pack(value))
 
     def is_expired(self, value):
+        value = self.pack(value)
         return self.server.hexists(self.EXPIRES, value) and self.server.hget(self.EXPIRES, value) < time.time()
 
     def is_inprogress(self, value):
+        value = self.pack(value)
         if not self.server.hexists(self.EXPROGRESS, value):
             return False
         return self.server.hget(self.EXPROGRESS, value) < time.time()
 
     def is_scheduled(self, value):
-        return self.server.zscore(self.SCHEDULED, value) is not None
+        return self.server.zscore(self.SCHEDULED, self.pack(value)) is not None
 
     def reschedule_dropped_items(self):
         in_progress = self.server.zrange(self.INPROGRESS, 0, -1, withscores=True)
@@ -206,18 +212,6 @@ class Scheduler(object):
         return item if scheduled_time <= time.time() else None
 
 
-
-class ScheduledTask(object):
-    def __init__(self, value, time, postdate_ttl=None):
-        self.time = time
-        self.value = value
-        self.postdate_ttl = postdate_ttl
-
-    def __repr__(self):
-        return "ScheduledItem(value={value}, time={time}, postdate_ttl={postdate_ttl})".format(**self.__dict__)
-
-    def __str__(self):
-        return "{value} @ {time} +{postdate_ttl}".format(**self.__dict__)
 
 if __name__ == '__main__':
     import doctest
