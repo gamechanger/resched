@@ -12,6 +12,8 @@ class Queue(RedisBacked):
 
     >>> from redis import Redis
     >>> from base import ContentType
+    >>> import time
+
     >>> q = Queue(Redis('localhost'), 'stuff', ContentType.JSON)
     >>> q.clear()
     >>> q.reclaim_tasks()
@@ -38,6 +40,8 @@ class Queue(RedisBacked):
 
     >>> qa = Queue(Redis('localhost'), 'stuff2', ContentType.JSON, worker_id='a')
     >>> qb = Queue(Redis('localhost'), 'stuff2', ContentType.JSON, worker_id='b')
+    >>> qa.work_ttl_seconds = 1
+    >>> qb.work_ttl_seconds = 1
     >>> qa.clear()
     >>> qa.push({'hello': 'cruelworld'})
     >>> qa.size()
@@ -47,6 +51,25 @@ class Queue(RedisBacked):
     >>> assert qb.pop()
     >>> assert qb.number_in_progress() == 1
     >>> assert qa.number_in_progress() == 0
+    >>> qb.complete({'hello': 'cruelworld'})
+    >>> qb.number_in_progress()
+    0
+    >>> qb.push({'hello': 'happyworld'})
+    >>> assert qb.pop()
+    >>> qb.number_in_progress()
+    1
+    >>> qa.number_in_progress()
+    0
+    >>> qb.size() + qa.size()
+    0
+    >>> time.sleep(1.5)
+    >>> qb.number_in_progress()
+    1
+    >>> qb.size()
+    0
+    >>> qb.reclaim_tasks()
+    >>> qb.size()
+    1
     """
 
     work_ttl_seconds = 60
