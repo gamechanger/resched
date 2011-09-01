@@ -9,6 +9,7 @@ setuptools.setup(
     name="Resched",
     version="0.0.1",
     author="Kiril Savino",
+    author_email="kiril@gamechanger.io",
     description="super simple Redis scheduling & queueing in Python",
     license="BSD",
     keywords="redis queue schedule",
