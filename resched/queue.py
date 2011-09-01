@@ -14,6 +14,8 @@ class Queue(RedisBacked):
     >>> from base import ContentType
     >>> q = Queue(Redis('localhost'), 'stuff', ContentType.JSON)
     >>> q.clear()
+    >>> q.reclaim_tasks()
+    >>> assert q.number_active_workers() == 0
     >>> assert q.size() == 0
     >>> assert q.number_in_progress() == 0
     >>> assert not q.peek()
@@ -33,6 +35,18 @@ class Queue(RedisBacked):
     >>> assert q.number_in_progress() == 0
     >>> assert q.number_active_workers() == 1
     >>> q.reclaim_tasks()
+
+    >>> qa = Queue(Redis('localhost'), 'stuff2', ContentType.JSON, worker_id='a')
+    >>> qb = Queue(Redis('localhost'), 'stuff2', ContentType.JSON, worker_id='b')
+    >>> qa.clear()
+    >>> qa.push({'hello': 'cruelworld'})
+    >>> qa.size()
+    1
+    >>> qb.size()
+    1
+    >>> assert qb.pop()
+    >>> assert qb.number_in_progress() == 1
+    >>> assert qa.number_in_progress() == 0
     """
 
     work_ttl_seconds = 60
@@ -57,6 +71,9 @@ class Queue(RedisBacked):
             pipe.delete(self.WORKING_LIST_KEY)
             pipe.delete(self.WORKING_ACTIVE_KEY)
             pipe.srem(self.WORKER_SET_KEY, self.worker_id)
+            for worker_id in self.server.smembers(self.WORKER_SET_KEY):
+                pipe.delete('queue.{ns}.working.{wid}'.format(ns=self.namespace, wid=worker_id))
+            pipe.delete(self.WORKER_SET_KEY)
             pipe.execute()
 
     def reclaim_tasks(self):
