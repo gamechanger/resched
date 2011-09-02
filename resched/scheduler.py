@@ -17,11 +17,11 @@ class Scheduler(RedisBacked):
     >>> scheduler.pop_due() is None
     True
     >>> time.sleep(1)
-    >>> scheduler.pop_due(progress_ttl=0.5) == value
+    >>> scheduler.pop_due(progress_ttl=1) == value
     True
     >>> scheduler.is_scheduled(value)
     False
-    >>> time.sleep(0.5)
+    >>> time.sleep(2)
     >>> scheduler.is_scheduled(value)
     False
     >>> scheduler.reschedule_dropped_items()
@@ -32,7 +32,7 @@ class Scheduler(RedisBacked):
     >>> scheduler.pop_due() == value
     True
     >>> scheduler.mark_completed(value)
-    >>> time.sleep(0.5)
+    >>> time.sleep(2)
     >>> scheduler.reschedule_dropped_items()
     >>> scheduler.is_scheduled(value)
     False
@@ -47,16 +47,14 @@ class Scheduler(RedisBacked):
         RedisBacked.__init__(self, redis_client, namespace, content_type)
         self.SCHEDULED = 'schedule.{0}.waiting'.format(namespace)
         self.INPROGRESS = 'schedule.{0}.inprogress'.format(namespace)
-        self.EXPROGRESS = 'schedule.{0}.exprogress'.format(namespace)
-        self.EXPIRES = 'schedule.{0}.expires'.format(namespace)
 
     def _clear_value(self, value, pipe=None):
         with pipe or self.server.pipeline() as pipe:
             pipe.multi()
             pipe.zrem(self.SCHEDULED, value)
             pipe.zrem(self.INPROGRESS, value)
-            pipe.hdel(self.EXPROGRESS, value)
-            pipe.hdel(self.EXPIRES, value)
+            pipe.delete(self._working_lock_key(value))
+            pipe.delete(self._payload_key(value))
             pipe.execute()
 
     def _reschedule_value(self, value, fire_time):
@@ -64,27 +62,33 @@ class Scheduler(RedisBacked):
             pipe.multi()
             pipe.zadd(self.SCHEDULED, value, fire_time)
             pipe.zrem(self.INPROGRESS, value)
-            pipe.zrem(self.EXPROGRESS, value)
+            pipe.delete(self._working_lock_key(value))
             pipe.execute()
 
-    def schedule(self, value, fire_datetime, expire_datetime=None):
+    def schedule(self, value, fire_datetime, expire_datetime=None, payload=None):
         """
         Schedule a task (value) to become due at some future date.
 
         value:            the 'task' (string) which will become due
         fire_datetime:    when the thing becomes due
         expire_datetime:  (optional) the time after which the item shouldn't be processed
+        payload:          (optional) the actual content to return for this task, which can vary over schedule calls
 
         * calling this multiple times will only schedule the task once, at the time
           specified in the last call to the function.
         """
         value = self.pack(value)
+        payload = payload or value
         fire_time = time.mktime(fire_datetime.timetuple())
+        expire_time = time.mktime(expire_datetime.timetuple()) if expire_datetime else None
+        seconds_to_expire = int(expire_time - time.time()) if expire_time else None
+
         with self.server.pipeline() as pipe:
-            if expire_datetime:
-                pipe.multi()
-                pipe.hset(self.EXPIRES, value, time.mktime(expire_datetime.timetuple()))
-            pipe.zadd(self.SCHEDULED, value, fire_time)
+            pipe.multi()
+            pipe.zadd(self.SCHEDULED, value, fire_time) # for sorting
+            payload_key = self._payload_key(value)
+            pipe.set(payload_key, payload)
+            if expire_time: pipe.expire(payload_key, seconds_to_expire)
             pipe.execute()
 
     def deschedule(self, value):
@@ -140,28 +144,32 @@ class Scheduler(RedisBacked):
                     if not value or scheduled_time > time_now:
                         return None # guaranteed this was the earliest, so we're done here
 
-                    if self.is_expired(value):
-                        self._clear_value(value, pipe)
-                        continue
-
-                    progress_expiry = time.time() + progress_ttl
-
-                    if destructively:
-                        self._clear_value(value, pipe)
+                    payload = pipe.get(self._payload_key(value)) # will be null if expired
+                    if payload:
+                        self._clear_value(value, pipe) if destructively else self._start_work(value, scheduled_time, progress_ttl, pipe)
+                        return self.unpack(payload)
                     else:
-                        pipe.multi()
-                        pipe.zrem(self.SCHEDULED, value)
-                        pipe.zadd(self.INPROGRESS, **{value: scheduled_time})
-                        pipe.hset(self.EXPROGRESS, value, progress_expiry)
-                        pipe.execute()
-
-                    return self.unpack(value)
+                        self._clear_value(value, pipe)
 
                 except WatchError:
                     continue
 
                 finally:
                     pipe.unwatch()
+
+    def _start_work(self, value, scheduled_time, progress_ttl, pipe):
+        pipe.multi()
+        pipe.zrem(self.SCHEDULED, value)
+        pipe.zadd(self.INPROGRESS, value, scheduled_time)
+        pipe.set(self._working_lock_key(value), '1')
+        pipe.expire(self._working_lock_key(value), progress_ttl)
+        pipe.execute()
+
+    def _working_lock_key(self, value):
+        return 'schedule:{ns}:{value}:working'.format(ns=self.namespace, value=value)
+
+    def _payload_key(self, value):
+        return 'schedule:{ns}:{val}'.format(ns=self.namespace, val=value)
 
     def mark_completed(self, value):
         """
@@ -174,29 +182,20 @@ class Scheduler(RedisBacked):
         """
         self._clear_value(self.pack(value))
 
-    def is_expired(self, value):
-        value = self.pack(value)
-        return self.server.hexists(self.EXPIRES, value) and self.server.hget(self.EXPIRES, value) < time.time()
-
-    def is_inprogress(self, value):
-        value = self.pack(value)
-        if not self.server.hexists(self.EXPROGRESS, value):
-            return False
-        return self.server.hget(self.EXPROGRESS, value) < time.time()
-
     def is_scheduled(self, value):
-        return self.server.zscore(self.SCHEDULED, self.pack(value)) is not None
+        value = self.pack(value)
+        return self.server.zscore(self.SCHEDULED, value) is not None and self.server.get(self._payload_key(value)) is not None
 
     def reschedule_dropped_items(self):
         in_progress = self.server.zrange(self.INPROGRESS, 0, -1, withscores=True)
         now = time.time()
         for value, scheduled_time in in_progress:
-            if self.is_inprogress(value):
-                continue
+            if self.server.get(self._working_lock_key(value)) is not None:
+                continue # locked for work
 
-            if self.is_expired(value):
+            if self.server.get(self._payload_key(value)) is None:
                 self._clear_value(value)
-                continue
+                continue # oops, gone, expired
 
             if not self.is_scheduled(value): # try not to overwrite someone else... but don't try too hard
                 self._reschedule_value(value, scheduled_time)
@@ -208,8 +207,8 @@ class Scheduler(RedisBacked):
         next_one = self.server.zrange(self.SCHEDULED, 0, 0, withscores=True)
         if not next_one:
             return None
-        item, scheduled_time = next_one[0]
-        return self.unpack(item) if scheduled_time <= time.time() else None
+        value, scheduled_time = next_one[0]
+        return self.unpack(self.server.get(self._payload_key(value))) if scheduled_time <= time.time() else None
 
 
 
