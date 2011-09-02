@@ -7,7 +7,7 @@ def read(fname):
 
 setuptools.setup(
     name="Resched",
-    version="0.0.4",
+    version="0.0.5",
     author="Kiril Savino",
     author_email="kiril@gamechanger.io",
     description="super simple Redis scheduling & queueing in Python",
@@ -16,4 +16,5 @@ setuptools.setup(
     url="http://github.com/gamechanger/resched",
     packages=["resched"],
     long_description=read("README"),
+    install_requires=['simplejson','redis']
     )
