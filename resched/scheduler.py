@@ -78,7 +78,7 @@ class Scheduler(RedisBacked):
           specified in the last call to the function.
         """
         value = self.pack(value)
-        payload = payload or value
+        payload = self.pack(payload) or value
         fire_time = time.mktime(fire_datetime.timetuple())
         expire_time = time.mktime(expire_datetime.timetuple()) if expire_datetime else None
         seconds_to_expire = int(expire_time - time.time()) if expire_time else None
