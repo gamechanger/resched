@@ -31,7 +31,7 @@ class Scheduler(RedisBacked):
     True
     >>> scheduler.pop_due() == value
     True
-    >>> scheduler.mark_completed(value)
+    >>> scheduler.complete(value)
     >>> time.sleep(2)
     >>> scheduler.reschedule_dropped_items()
     >>> scheduler.is_scheduled(value)
@@ -126,7 +126,7 @@ class Scheduler(RedisBacked):
 
         * Popping is a constant-time operation (fast)
         * The move from Scheduled to In Progress is atomic (barring Redis catastrophic failure)
-        * You've got a limited-time lock on the item, and must call mark_completed() to prevent re-queue
+        * You've got a limited-time lock on the item, and must call complete() to prevent re-queue
         * You can govern that by passing 'progress_ttl' a custom # of seconds you'll have before your
           job goes back into the pool.
         """
@@ -171,7 +171,7 @@ class Scheduler(RedisBacked):
     def _payload_key(self, value):
         return 'schedule:{ns}:{val}'.format(ns=self.namespace, val=value)
 
-    def mark_completed(self, value):
+    def complete(self, value):
         """
         Mark an in-progress task as having been completed, which will de-schedule it
         if it's scheduled, and remove it from the in-progress set.
