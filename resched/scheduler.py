@@ -182,6 +182,9 @@ class Scheduler(RedisBacked):
         """
         self._clear_value(self.pack(value))
 
+    def count_scheduled(self):
+        return self.server.zcard(self.SCHEDULED)
+
     def is_scheduled(self, value):
         value = self.pack(value)
         return self.server.zscore(self.SCHEDULED, value) is not None and self.server.get(self._payload_key(value)) is not None
