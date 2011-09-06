@@ -45,8 +45,8 @@ class Scheduler(RedisBacked):
         Create a scheduler, in a namespace.
         """
         RedisBacked.__init__(self, redis_client, namespace, content_type)
-        self.SCHEDULED = 'schedule.{0}.waiting'.format(namespace)
-        self.INPROGRESS = 'schedule.{0}.inprogress'.format(namespace)
+        self.SCHEDULED = 'schedule:{0}:waiting'.format(namespace)
+        self.INPROGRESS = 'schedule:{0}:inprogress'.format(namespace)
 
     def _clear_value(self, value, pipe=None):
         with pipe or self.server.pipeline() as pipe:
