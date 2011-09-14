@@ -39,10 +39,8 @@ class Queue(RedisBacked):
     >>> assert q.number_active_workers() == 1
     >>> q.reclaim_tasks()
 
-    >>> qa = Queue(Redis('localhost'), 'stuff2', ContentType.JSON, worker_id='a')
-    >>> qb = Queue(Redis('localhost'), 'stuff2', ContentType.JSON, worker_id='b')
-    >>> qa.work_ttl_seconds = 1
-    >>> qb.work_ttl_seconds = 1
+    >>> qa = Queue(Redis('localhost'), 'stuff2', ContentType.JSON, worker_id='a', work_ttl=1)
+    >>> qb = Queue(Redis('localhost'), 'stuff2', ContentType.JSON, worker_id='b', work_ttl=1)
     >>> qa.clear()
     >>> qa.push({'hello': 'cruelworld'})
     >>> qa.size()
@@ -77,18 +75,26 @@ class Queue(RedisBacked):
 
     FIFO = 'fifo'
     FILO = 'filo'
-    strategy = 'fifo'
-    keep_entry_set = False
-    work_ttl_seconds = 60
+    DEFAULT_WORK_TTL_SECONDS = 60
 
-    def __init__(self, redis_client, namespace, content_type, worker_id='global'):
+    def __init__(self, redis_client, namespace, content_type, **kwargs):
+        """
+        optional kwargs:
+        worker_id:       defaults to 'global', but useful if doing multi-processing
+        track_entries:   whether to keep a set around to track membership, defaults to False
+        strategy:        'filo' or 'fifo', defaults to 'fifo'
+        work_ttl:        work_ttl_seconds
+        """
         RedisBacked.__init__(self, redis_client, namespace, content_type)
-        self.worker_id = worker_id
+        self.worker_id = kwargs.get('worker_id', 'global')
         self.QUEUE_LIST_KEY = 'queue.{ns}'.format(ns=namespace)
         self.ENTRY_SET_KEY = 'queue.{ns}.entries'.format(ns=namespace)
         self.WORKER_SET_KEY = 'queue.{ns}.workers'.format(ns=namespace)
-        self.WORKING_LIST_KEY = 'queue.{ns}.working.{wid}'.format(ns=namespace, wid=worker_id)
-        self.WORKING_ACTIVE_KEY = 'queue.{ns}.active.{wid}'.format(ns=namespace, wid=worker_id)
+        self.WORKING_LIST_KEY = 'queue.{ns}.working.{wid}'.format(ns=namespace, wid=self.worker_id)
+        self.WORKING_ACTIVE_KEY = 'queue.{ns}.active.{wid}'.format(ns=namespace, wid=self.worker_id)
+        self.strategy = kwargs.get('strategy', self.FIFO)
+        self.keep_entry_set = kwargs.get('track_entries', False)
+        self.work_ttl_seconds = kwargs.get('work_ttl', self.DEFAULT_WORK_TTL_SECONDS)
 
     def _on_activity(self):
         self.server.sadd(self.WORKER_SET_KEY, self.worker_id)
