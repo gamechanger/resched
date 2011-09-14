@@ -14,6 +14,7 @@ class Queue(RedisBacked):
     >>> import time
 
     >>> q = Queue(Redis('localhost'), 'stuff', ContentType.JSON)
+    >>> q.keep_entry_set = True
     >>> q.clear()
     >>> q.reclaim_tasks()
     >>> assert q.number_active_workers() == 0
@@ -24,6 +25,7 @@ class Queue(RedisBacked):
     >>> string_value = '{"hello": "world"}'
     >>> q.push(dict_value)
     >>> assert q.peek()
+    >>> assert q.contains(dict_value)
     >>> assert q.pop(destructively=True)
     >>> assert not q.pop(destructively=True)
     >>> q.push(string_value)
@@ -76,12 +78,14 @@ class Queue(RedisBacked):
     FIFO = 'fifo'
     FILO = 'filo'
     strategy = 'fifo'
+    keep_entry_set = False
     work_ttl_seconds = 60
 
     def __init__(self, redis_client, namespace, content_type, worker_id='global'):
         RedisBacked.__init__(self, redis_client, namespace, content_type)
         self.worker_id = worker_id
         self.QUEUE_LIST_KEY = 'queue.{ns}'.format(ns=namespace)
+        self.ENTRY_SET_KEY = 'queue.{ns}.entries'.format(ns=namespace)
         self.WORKER_SET_KEY = 'queue.{ns}.workers'.format(ns=namespace)
         self.WORKING_LIST_KEY = 'queue.{ns}.working.{wid}'.format(ns=namespace, wid=worker_id)
         self.WORKING_ACTIVE_KEY = 'queue.{ns}.active.{wid}'.format(ns=namespace, wid=worker_id)
@@ -95,6 +99,7 @@ class Queue(RedisBacked):
         with self.server.pipeline() as pipe:
             pipe.multi()
             pipe.delete(self.QUEUE_LIST_KEY)
+            pipe.delete(self.ENTRY_SET_KEY)
             pipe.delete(self.WORKING_LIST_KEY)
             pipe.delete(self.WORKING_ACTIVE_KEY)
             pipe.srem(self.WORKER_SET_KEY, self.worker_id)
@@ -123,10 +128,19 @@ class Queue(RedisBacked):
 
     def push(self, value):
         self._on_activity()
-        if self.strategy == self.FIFO:
-            self.server.lpush(self.QUEUE_LIST_KEY, self.pack(value))
-        else:
-            self.server.rpush(self.QUEUE_LIST_KEY, self.pack(value))
+        with self.server.pipeline() as pipe:
+            value = self.pack(value)
+            if self.strategy == self.FIFO:
+                pipe.lpush(self.QUEUE_LIST_KEY, value)
+            else:
+                pipe.rpush(self.QUEUE_LIST_KEY, value)
+            if self.keep_entry_set:
+                pipe.sadd(self.ENTRY_SET_KEY, value)
+            pipe.execute()
+
+    def contains(self, value):
+        value = self.pack(value)
+        return self.server.sismember(self.ENTRY_SET_KEY, value)
 
     def pop(self, destructively=False):
         self._on_activity()
@@ -139,7 +153,11 @@ class Queue(RedisBacked):
 
     def complete(self, value):
         self._on_activity()
-        self.server.lrem(self.WORKING_LIST_KEY, self.pack(value))
+        with self.server.pipeline() as pipe:
+            value = self.pack(value)
+            pipe.lrem(self.WORKING_LIST_KEY, value)
+            pipe.srem(self.ENTRY_SET_KEY, value)
+            pipe.execute()
 
     def noop(self):
         self._on_activity()
