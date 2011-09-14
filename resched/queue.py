@@ -1,6 +1,5 @@
 __author__ = 'Kiril Savino'
 
-import simplejson
 from base import RedisBacked
 
 class Queue(RedisBacked):
@@ -74,6 +73,9 @@ class Queue(RedisBacked):
     0
     """
 
+    FIFO = 'fifo'
+    FILO = 'filo'
+    strategy = 'fifo'
     work_ttl_seconds = 60
 
     def __init__(self, redis_client, namespace, content_type, worker_id='global'):
@@ -121,7 +123,10 @@ class Queue(RedisBacked):
 
     def push(self, value):
         self._on_activity()
-        self.server.lpush(self.QUEUE_LIST_KEY, self.pack(value))
+        if self.strategy == self.FIFO:
+            self.server.lpush(self.QUEUE_LIST_KEY, self.pack(value))
+        else:
+            self.server.rpush(self.QUEUE_LIST_KEY, self.pack(value))
 
     def pop(self, destructively=False):
         self._on_activity()
