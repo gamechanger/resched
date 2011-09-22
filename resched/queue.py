@@ -153,6 +153,11 @@ class Queue(RedisBacked):
         v = self.server.rpop(self.QUEUE_LIST_KEY) if destructively else self.server.rpoplpush(self.QUEUE_LIST_KEY, self.WORKING_LIST_KEY)
         return self.unpack(v)
 
+    def blocking_pop(self, destructively=False):
+        self._on_activity()
+        v = self.server.brpop(self.QUEUE_LIST_KEY) if destructively else self.server.brpoplpush(self.QUEUE_LIST_KEY, self.WORKING_LIST_KEY)
+        return self.unpack(v)
+
     def peek(self):
         self._on_activity()
         return self.unpack(self.server.lindex(self.QUEUE_LIST_KEY, 0))
