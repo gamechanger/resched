@@ -139,11 +139,11 @@ class Scheduler(RedisBacked):
 
                     due_list = pipe.zrange(self.SCHEDULED, 0, 0, withscores=True)
                     if not due_list:
-                        return None
+                        return None, None
                     value, scheduled_time = due_list[0]
 
                     if not value or scheduled_time > time_now:
-                        return None # guaranteed this was the earliest, so we're done here
+                        return None, None # guaranteed this was the earliest, so we're done here
 
                     payload = pipe.get(self._payload_key(value)) # will be null if expired
                     if payload:
@@ -157,6 +157,7 @@ class Scheduler(RedisBacked):
 
                 finally:
                     pipe.unwatch()
+        return None, None
 
     def _start_work(self, value, scheduled_time, progress_ttl, pipe):
         pipe.multi()
