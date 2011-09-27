@@ -3,6 +3,7 @@ __author__ = 'Kiril Savino'
 import time
 from redis import WatchError
 from base import RedisBacked
+import logging
 
 class Scheduler(RedisBacked):
     """
@@ -147,7 +148,7 @@ class Scheduler(RedisBacked):
                     payload = pipe.get(self._payload_key(value)) # will be null if expired
                     if payload:
                         self._clear_value(value, pipe) if destructively else self._start_work(value, scheduled_time, progress_ttl, pipe)
-                        return self.unpack(payload)
+                        return (value, self.unpack(payload))
                     else:
                         self._clear_value(value, pipe)
 
