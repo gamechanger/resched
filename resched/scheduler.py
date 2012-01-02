@@ -13,6 +13,7 @@ class Scheduler(RedisBacked):
     >>> from redis import Redis
     >>> from base import ContentType
     >>> scheduler = Scheduler(Redis('localhost'), 'foo', ContentType.STRING)
+    >>> scheduler.whipe()
     >>> value = 'foo'
     >>> scheduler.schedule(value, datetime.datetime.now()+datetime.timedelta(seconds=1))
     >>> scheduler.is_scheduled(value)
@@ -54,6 +55,10 @@ class Scheduler(RedisBacked):
         self.EXPIRATIONS = 'schedule:{0}:expiration'.format(namespace)
         self.VERSION = 'schedule:{0}:version'.format(namespace)
         self.WORKING_TTL = 'schedule:{0}:version'.format(namespace)
+
+    def whipe(self):
+        for key in self.server.keys('schedule:{0}:*'.format(self.namespace)):
+            self.server.delete(key)
 
     def _clear_value(self, value, pipe=None):
         with pipe or self.server.pipeline() as pipe:
