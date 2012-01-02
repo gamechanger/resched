@@ -150,12 +150,24 @@ class Queue(RedisBacked):
 
     def pop(self, destructively=False):
         self._on_activity()
-        v = self.server.rpop(self.QUEUE_LIST_KEY) if destructively else self.server.rpoplpush(self.QUEUE_LIST_KEY, self.WORKING_LIST_KEY)
+        v = None
+        if destructively:
+            v = self.server.rpop(self.QUEUE_LIST_KEY)
+            if v:
+                self.server.srem(self.ENTRY_SET_KEY, v)
+        else:
+            v = self.server.rpoplpush(self.QUEUE_LIST_KEY, self.WORKING_LIST_KEY)
         return self.unpack(v)
 
     def blocking_pop(self, destructively=False):
         self._on_activity()
-        v = self.server.brpop(self.QUEUE_LIST_KEY) if destructively else self.server.brpoplpush(self.QUEUE_LIST_KEY, self.WORKING_LIST_KEY)
+        v = None
+        if destructively:
+            v = self.server.brpop(self.QUEUE_LIST_KEY)
+            if v:
+                self.server.srem(self.ENTRY_SET_KEY, v)
+        else:
+            v = self.server.brpoplpush(self.QUEUE_LIST_KEY, self.WORKING_LIST_KEY)
         return self.unpack(v)
 
     def peek(self):
@@ -179,7 +191,9 @@ class Queue(RedisBacked):
         with self.server.pipeline() as pipe:
             pipe.multi()
             pipe.lrem(self.WORKING_LIST_KEY, packed)
-            self.server.lpush(self.QUEUE_LIST_KEY, packed)
+            pipe.lpush(self.QUEUE_LIST_KEY, packed)
+            if self.keep_entry_set:
+                pipe.sadd(self.ENTRY_SET_KEY, packed)
             pipe.execute()
 
 
