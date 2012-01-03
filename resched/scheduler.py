@@ -54,7 +54,7 @@ class Scheduler(RedisBacked):
         self.PAYLOADS = 'schedule:{0}:payload'.format(namespace)
         self.EXPIRATIONS = 'schedule:{0}:expiration'.format(namespace)
         self.VERSION = 'schedule:{0}:version'.format(namespace)
-        self.WORKING_TTL = 'schedule:{0}:version'.format(namespace)
+        self.WORKING_TTL = 'schedule:{0}:working'.format(namespace)
 
     def whipe(self):
         for key in self.server.keys('schedule:{0}:*'.format(self.namespace)):
