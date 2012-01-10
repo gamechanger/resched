@@ -31,6 +31,8 @@ class RedisBacked(object):
             return str(value)
         if self.content_type == ContentType.JSON:
             return simplejson.dumps(value)
+        if self.content_type == ContentType.STRING:
+            return str(value)
         raise Exception("I don't understand content type %s" % self.content_type)
 
     def unpack(self, value):
