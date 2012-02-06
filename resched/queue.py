@@ -85,7 +85,7 @@ class Queue(RedisBacked):
         strategy:        'filo' or 'fifo', defaults to 'fifo'
         work_ttl:        work_ttl_seconds
         """
-        RedisBacked.__init__(self, redis_client, namespace, content_type)
+        RedisBacked.__init__(self, redis_client, namespace, content_type, **kwargs)
         self.worker_id = kwargs.get('worker_id', 'global')
         self.QUEUE_LIST_KEY = 'queue.{ns}'.format(ns=namespace)
         self.ENTRY_SET_KEY = 'queue.{ns}.entries'.format(ns=namespace)
