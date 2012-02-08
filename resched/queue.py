@@ -92,6 +92,7 @@ class Queue(RedisBacked):
         self.WORKER_SET_KEY = 'queue.{ns}.workers'.format(ns=namespace)
         self.WORKING_LIST_KEY = 'queue.{ns}.working.{wid}'.format(ns=namespace, wid=self.worker_id)
         self.WORKING_ACTIVE_KEY = 'queue.{ns}.active.{wid}'.format(ns=namespace, wid=self.worker_id)
+        self.PAYLOADS = 'queue.{ns}.payload'.format(ns=namespace)
         self.strategy = kwargs.get('strategy', self.FIFO)
         self.keep_entry_set = kwargs.get('track_entries', False)
         self.work_ttl_seconds = kwargs.get('work_ttl', self.DEFAULT_WORK_TTL_SECONDS)
@@ -132,23 +133,26 @@ class Queue(RedisBacked):
     def number_active_workers(self):
         return self.server.scard(self.WORKER_SET_KEY)
 
-    def push(self, value):
+    def push(self, value, payload=None):
         self._on_activity()
         with self.server.pipeline() as pipe:
             value = self.pack(value)
+            payload = self.pack(payload)
             if self.strategy == self.FIFO:
                 pipe.lpush(self.QUEUE_LIST_KEY, value)
             else:
                 pipe.rpush(self.QUEUE_LIST_KEY, value)
             if self.keep_entry_set:
                 pipe.sadd(self.ENTRY_SET_KEY, value)
+            if payload:
+                pipe.hset(self.PAYLOADS, value, payload)
             pipe.execute()
 
     def contains(self, value):
         value = self.pack(value)
         return self.server.sismember(self.ENTRY_SET_KEY, value)
 
-    def pop(self, destructively=False):
+    def pop(self, destructively=False, return_key=False):
         self._on_activity()
         v = None
         if destructively:
@@ -157,9 +161,12 @@ class Queue(RedisBacked):
                 self.server.srem(self.ENTRY_SET_KEY, v)
         else:
             v = self.server.rpoplpush(self.QUEUE_LIST_KEY, self.WORKING_LIST_KEY)
-        return self.unpack(v)
+        v = self.unpack(v)
+        if return_key:
+            return v, payload
+        return payload or v
 
-    def blocking_pop(self, destructively=False):
+    def blocking_pop(self, destructively=False, return_key=False):
         self._on_activity()
         v = None
         if destructively:
@@ -168,7 +175,12 @@ class Queue(RedisBacked):
                 self.server.srem(self.ENTRY_SET_KEY, v)
         else:
             v = self.server.brpoplpush(self.QUEUE_LIST_KEY, self.WORKING_LIST_KEY)
-        return self.unpack(v)
+        payload = self.server.hget(self.PAYLOADS, v)
+        payload = self.unpack(payload)
+        v = self.unpack(v)
+        if return_key:
+            return v, payload
+        return payload or v
 
     def peek(self):
         self._on_activity()
@@ -180,6 +192,7 @@ class Queue(RedisBacked):
             value = self.pack(value)
             pipe.lrem(self.WORKING_LIST_KEY, value)
             pipe.srem(self.ENTRY_SET_KEY, value)
+            pipe.hdel(self.PAYLOADS, value)
             pipe.execute()
 
     def noop(self):
