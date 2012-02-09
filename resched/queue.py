@@ -161,6 +161,8 @@ class Queue(RedisBacked):
                 self.server.srem(self.ENTRY_SET_KEY, v)
         else:
             v = self.server.rpoplpush(self.QUEUE_LIST_KEY, self.WORKING_LIST_KEY)
+        payload = self.server.hget(self.PAYLOADS, v)
+        payload = self.unpack(payload)
         v = self.unpack(v)
         if return_key:
             return v, payload
