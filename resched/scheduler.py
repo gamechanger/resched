@@ -221,7 +221,7 @@ class Scheduler(RedisBacked):
         expire_date = self.server.hget(self.EXPIRATIONS, value)
         if expire_date:
             # new method just tracks a TTL in a hash
-            return expire_date > time.time()
+            return float(expire_date) > time.time()
         # old method is with expiring key
         return self.server.get(self._payload_key(value)) is not None
 
