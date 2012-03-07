@@ -22,6 +22,10 @@ class RedisBacked(object):
         self.content_type_args = kwargs
 
     def pack(self, value):
+        if self.content_type == ContentType.JSON:
+            if 'encoder' in self.content_type_args:
+                return simplejson.dumps(value, cls=self.content_type_args['encoder'])
+            return simplejson.dumps(value)
         if value is None:
             return value
         if isinstance(value, basestring):
@@ -30,10 +34,6 @@ class RedisBacked(object):
             return str(value)
         if self.content_type == ContentType.FLOAT:
             return str(value)
-        if self.content_type == ContentType.JSON:
-            if 'encoder' in self.content_type_args:
-                return simplejson.dumps(value, cls=self.content_type_args['encoder'])
-            return simplejson.dumps(value)
         if self.content_type == ContentType.STRING:
             return str(value)
         raise Exception("I don't understand content type %s" % self.content_type)
