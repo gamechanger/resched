@@ -25,7 +25,7 @@ class RedisBacked(object):
         if self.content_type == ContentType.JSON:
             if 'encoder' in self.content_type_args:
                 return simplejson.dumps(value, cls=self.content_type_args['encoder'], sort_keys=True)
-            return simplejson.dumps(value)
+            return simplejson.dumps(value, sort_keys=True)
         if value is None:
             return value
         if isinstance(value, basestring):
