@@ -1,6 +1,6 @@
 __author__ = 'Kiril Savino'
 
-from base import RedisBacked
+from base import RedisBacked, ContentType
 
 class Queue(RedisBacked):
     """
@@ -77,7 +77,7 @@ class Queue(RedisBacked):
     FILO = 'filo'
     DEFAULT_WORK_TTL_SECONDS = 60
 
-    def __init__(self, redis_client, namespace, content_type, **kwargs):
+    def __init__(self, redis_client, namespace, content_type=ContentType.STRING, **kwargs):
         """
         optional kwargs:
         worker_id:       defaults to 'global', but useful if doing multi-processing
