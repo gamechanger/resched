@@ -130,6 +130,7 @@ class Queue(RedisBacked):
             working_key = self._working_list_key(worker_id)
             for x in range(self.server.llen(working_key)):
                 self.server.rpoplpush(working_key, self.QUEUE_LIST_KEY)
+            self.server.srem(self.WORKER_SET_KEY, worker_id)
 
     def size(self):
         return self.server.llen(self.QUEUE_LIST_KEY)
