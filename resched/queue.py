@@ -134,7 +134,6 @@ class Queue(RedisBacked):
         return self.server.scard(self.WORKER_SET_KEY)
 
     def push(self, value, payload=None):
-        self._on_activity()
         with self.server.pipeline() as pipe:
             value = self.pack(value)
             payload = self.pack(payload)
