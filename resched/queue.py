@@ -135,7 +135,9 @@ class Queue(RedisBacked):
     def size(self):
         return self.server.llen(self.QUEUE_LIST_KEY)
 
-    def number_in_progress(self):
+    def number_in_progress(self, all=False):
+        if all:
+            return sum(self.server.llen(self._working_list_key(worker_id)) for worker_id in self.server.smembers(self.WORKER_SET_KEY))
         return self.server.llen(self.WORKING_LIST_KEY)
 
     def number_active_workers(self):
