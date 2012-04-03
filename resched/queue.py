@@ -140,6 +140,9 @@ class Queue(RedisBacked):
             return sum(self.server.llen(self._working_list_key(worker_id)) for worker_id in self.server.smembers(self.WORKER_SET_KEY))
         return self.server.llen(self.WORKING_LIST_KEY)
 
+    def number_of_entries(self):
+        return self.server.scard(self.ENTRY_SET_KEY)
+
     def number_active_workers(self):
         return self.server.scard(self.WORKER_SET_KEY)
 
