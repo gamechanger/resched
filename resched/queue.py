@@ -1,6 +1,6 @@
 __author__ = 'Kiril Savino'
 
-from base import RedisBacked
+from base import RedisBacked, ContentType
 
 class Queue(RedisBacked):
     """
@@ -77,7 +77,7 @@ class Queue(RedisBacked):
     FILO = 'filo'
     DEFAULT_WORK_TTL_SECONDS = 60
 
-    def __init__(self, redis_client, namespace, content_type, **kwargs):
+    def __init__(self, redis_client, namespace, content_type=ContentType.STRING, **kwargs):
         """
         optional kwargs:
         worker_id:       defaults to 'global', but useful if doing multi-processing
@@ -90,12 +90,20 @@ class Queue(RedisBacked):
         self.QUEUE_LIST_KEY = 'queue.{ns}'.format(ns=namespace)
         self.ENTRY_SET_KEY = 'queue.{ns}.entries'.format(ns=namespace)
         self.WORKER_SET_KEY = 'queue.{ns}.workers'.format(ns=namespace)
-        self.WORKING_LIST_KEY = 'queue.{ns}.working.{wid}'.format(ns=namespace, wid=self.worker_id)
-        self.WORKING_ACTIVE_KEY = 'queue.{ns}.active.{wid}'.format(ns=namespace, wid=self.worker_id)
+        self.WORKING_LIST_KEY = self._working_list_key()
+        self.WORKING_ACTIVE_KEY = self._working_active_key()
         self.PAYLOADS = 'queue.{ns}.payload'.format(ns=namespace)
         self.strategy = kwargs.get('strategy', self.FIFO)
         self.keep_entry_set = kwargs.get('track_entries', False)
         self.work_ttl_seconds = kwargs.get('work_ttl', self.DEFAULT_WORK_TTL_SECONDS)
+
+    def _working_list_key(self, worker_id=None):
+        worker_id = worker_id or self.worker_id
+        return 'queue.{ns}.working.{wid}'.format(ns=self.namespace, wid=worker_id)
+
+    def _working_active_key(self, worker_id=None):
+        worker_id = worker_id or self.worker_id
+        return 'queue.{ns}.active.{wid}'.format(ns=self.namespace, wid=worker_id)
 
     def _on_activity(self):
         self.server.sadd(self.WORKER_SET_KEY, self.worker_id)
@@ -111,24 +119,29 @@ class Queue(RedisBacked):
             pipe.delete(self.WORKING_ACTIVE_KEY)
             pipe.srem(self.WORKER_SET_KEY, self.worker_id)
             for worker_id in self.server.smembers(self.WORKER_SET_KEY):
-                pipe.delete('queue.{ns}.working.{wid}'.format(ns=self.namespace, wid=worker_id))
+                pipe.delete(self._working_list_key(worker_id))
             pipe.delete(self.WORKER_SET_KEY)
             pipe.execute()
 
     def reclaim_tasks(self):
         for worker_id in self.server.smembers(self.WORKER_SET_KEY):
-            active_key = 'queue.{ns}.active.{wid}'.format(ns=self.namespace, wid=worker_id)
-            if self.server.get(active_key):
+            if self.server.get(self._working_active_key(worker_id)):
                 continue
-            working_key = 'queue.{ns}.working.{wid}'.format(ns=self.namespace, wid=worker_id)
+            working_key = self._working_list_key(worker_id)
             for x in range(self.server.llen(working_key)):
                 self.server.rpoplpush(working_key, self.QUEUE_LIST_KEY)
+            self.server.srem(self.WORKER_SET_KEY, worker_id)
 
     def size(self):
         return self.server.llen(self.QUEUE_LIST_KEY)
 
-    def number_in_progress(self):
+    def number_in_progress(self, all=False):
+        if all:
+            return sum(self.server.llen(self._working_list_key(worker_id)) for worker_id in self.server.smembers(self.WORKER_SET_KEY))
         return self.server.llen(self.WORKING_LIST_KEY)
+
+    def number_of_entries(self):
+        return self.server.scard(self.ENTRY_SET_KEY)
 
     def number_active_workers(self):
         return self.server.scard(self.WORKER_SET_KEY)

@@ -12,7 +12,7 @@ class ContentType(object):
 class RedisBacked(object):
     __slots__ = ('server', 'namespace', 'content_type')
 
-    def __init__(self, redis_client, namespace, content_type, **kwargs):
+    def __init__(self, redis_client, namespace, content_type=ContentType.STRING, **kwargs):
         assert redis_client, "got invalid Redis client"
         assert namespace, "yo, bro, need to pass in a valid name, or just leave it defaulted, mkay?"
         assert content_type in ContentType.ALL_TYPES, "invalid content_type"
