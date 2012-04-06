@@ -16,7 +16,7 @@ the 2-phased pop convention that the Resched Queue does.
 
 *ContentType*: a really simple way to store data of various types in a
 Resched collection: including JSON, ints, longs, etc.  All casting/
-parsing/ etc. is handle within Resched, so you can just throw `dict`s at it
+parsing/ etc. is handled within Resched, so you can just throw `dict`s at it
 without having to think too much.
 
 Built in NYC by the folks at GameChanger, in particular kiril (kiril@gc.io / http://github.com/kiril).
