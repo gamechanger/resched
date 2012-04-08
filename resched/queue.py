@@ -25,12 +25,11 @@ class Queue(RedisBacked):
     >>> string_value = '{"hello": "world"}'
     >>> q.push(dict_value)
     >>> assert q.peek()
-    >>> assert q.contains(dict_value)
-    >>> assert q.pop(destructively=True)
-    >>> assert not q.pop(destructively=True)
-    >>> q.push(string_value)
-    >>> assert q.peek()
-    >>> assert q.pop(destructively=True) == dict_value
+    >>> q.contains(dict_value)
+    True
+    >>> q.pop(destructively=True)
+    {'hello': 'world'}
+    >>> q.pop(destructively=True)
     >>> q.push(dict_value)
     >>> assert q.pop() == dict_value
     >>> q.complete(dict_value)
@@ -74,28 +73,39 @@ class Queue(RedisBacked):
     """
 
     FIFO = 'fifo'
-    FILO = 'filo'
+    FILO = LIFO = 'filo'
     DEFAULT_WORK_TTL_SECONDS = 60
 
     def __init__(self, redis_client, namespace, content_type=ContentType.STRING, **kwargs):
         """
-        optional kwargs:
-        worker_id:       defaults to 'global', but useful if doing multi-processing
-        track_entries:   whether to keep a set around to track membership, defaults to False
-        strategy:        'filo' or 'fifo', defaults to 'fifo'
-        work_ttl:        work_ttl_seconds
+        @param  redis_client       the redis.py client to use
+        @param  namespace          the 'name' of this Queue
+        @param  content_type       A resched.ContentType, defaulting to STRING
+
+        @optional  worker_id       defaults to 'global', but useful if doing multi-processing
+        @optional  track_entries   whether to keep a set around to track membership, defaults to False
+        @optional  strategy        'filo' or 'fifo', defaults to 'fifo'
+        @optional  work_ttl        work_ttl_seconds
+        @optional  pipes           A list of KV pairs of completion result keys and resultant Queues.
         """
         RedisBacked.__init__(self, redis_client, namespace, content_type, **kwargs)
         self.worker_id = kwargs.get('worker_id', 'global')
+        self.strategy = kwargs.get('strategy', self.FIFO)
+        assert self.strategy in (self.FIFO, self.LIFO)
+        self.keep_entry_set = kwargs.get('track_entries', False)
+        self.work_ttl_seconds = kwargs.get('work_ttl', self.DEFAULT_WORK_TTL_SECONDS)
+        self.pipes = kwargs.get('pipes', [])
+        assert isinstance(self.pipes, (list, tuple))
+        for result_code, queue in self.pipes:
+            assert isintance(result_code, basestring) and isinstance(queue, Queue)
+
         self.QUEUE_LIST_KEY = 'queue.{ns}'.format(ns=namespace)
         self.ENTRY_SET_KEY = 'queue.{ns}.entries'.format(ns=namespace)
         self.WORKER_SET_KEY = 'queue.{ns}.workers'.format(ns=namespace)
         self.WORKING_LIST_KEY = self._working_list_key()
         self.WORKING_ACTIVE_KEY = self._working_active_key()
         self.PAYLOADS = 'queue.{ns}.payload'.format(ns=namespace)
-        self.strategy = kwargs.get('strategy', self.FIFO)
-        self.keep_entry_set = kwargs.get('track_entries', False)
-        self.work_ttl_seconds = kwargs.get('work_ttl', self.DEFAULT_WORK_TTL_SECONDS)
+
 
     def _working_list_key(self, worker_id=None):
         worker_id = worker_id or self.worker_id
