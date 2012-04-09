@@ -75,7 +75,7 @@ class Queue(RedisBacked):
     >>> second = Queue(client, 'abc_errors')
     >>> first.clear()
     >>> second.clear()
-    >>> first.pipe_complete(Queue.RESULT_ERROR, second)
+    >>> first.pipe(Queue.RESULT_ERROR, second)
     >>> first.push('a', 'aaa')
     >>> first.pop(return_key=True)
     ('a', 'aaa')
@@ -126,7 +126,7 @@ class Queue(RedisBacked):
         self.PAYLOADS = 'queue.{ns}.payload'.format(ns=namespace)
 
 
-    def pipe_complete(self, result, queue):
+    def pipe(self, result, queue):
         """
         @param result     A string used to pipe completions to another Queue.
         @param queue      The resched.queue.Queue to pipe them to.
