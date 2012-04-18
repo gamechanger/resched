@@ -202,15 +202,21 @@ class Queue(RedisBacked):
         value = self.pack(value)
         return self.server.sismember(self.ENTRY_SET_KEY, value)
 
-    def pop(self, destructively=False, return_key=False):
+    def pop(self, destructively=False, return_key=False, blocking=False):
         self._on_activity()
         v = None
         if destructively:
-            v = self.server.rpop(self.QUEUE_LIST_KEY)
+            if blocking:
+                v = self.server.brpop(self.QUEUE_LIST_KEY)
+            else:
+                v = self.server.rpop(self.QUEUE_LIST_KEY)
             if v:
                 self.server.srem(self.ENTRY_SET_KEY, v)
         else:
-            v = self.server.rpoplpush(self.QUEUE_LIST_KEY, self.WORKING_LIST_KEY)
+            if blocking:
+                v = self.server.brpoplpush(self.QUEUE_LIST_KEY, self.WORKING_LIST_KEY)
+            else:
+                v = self.server.rpoplpush(self.QUEUE_LIST_KEY, self.WORKING_LIST_KEY)
         payload = self.server.hget(self.PAYLOADS, v)
         payload = self.unpack(payload)
         v = self.unpack(v)
@@ -219,20 +225,8 @@ class Queue(RedisBacked):
         return payload or v
 
     def blocking_pop(self, destructively=False, return_key=False):
-        self._on_activity()
-        v = None
-        if destructively:
-            v = self.server.brpop(self.QUEUE_LIST_KEY)
-            if v:
-                self.server.srem(self.ENTRY_SET_KEY, v)
-        else:
-            v = self.server.brpoplpush(self.QUEUE_LIST_KEY, self.WORKING_LIST_KEY)
-        payload = self.server.hget(self.PAYLOADS, v)
-        payload = self.unpack(payload)
-        v = self.unpack(v)
-        if return_key:
-            return v, payload
-        return payload or v
+        return self.pop(destructively, return_key, blocking=True)
+
 
     def peek(self):
         self._on_activity()
