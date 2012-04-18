@@ -264,12 +264,12 @@ class Queue(RedisBacked):
         self._on_activity()
         with self.server.pipeline() as pipe:
             value = self.pack(value)
-            if result and result in self.pipes:
-                payload = self.server.hget(self.PAYLOADS, value) or value
-                self.pipes[result].push(value, payload=payload, pipeline=pipe)
             pipe.lrem(self.WORKING_LIST_KEY, value)
             pipe.srem(self.ENTRY_SET_KEY, value)
             pipe.hdel(self.PAYLOADS, value)
+            if result and result in self.pipes:
+                payload = self.server.hget(self.PAYLOADS, value)
+                self.pipes[result].push(value, payload=payload, pipeline=pipe)
             pipe.execute()
 
     def noop(self):
