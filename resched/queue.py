@@ -71,6 +71,22 @@ class Queue(RedisBacked):
     1
     >>> qb.number_in_progress()
     0
+    >>> qc = Queue(client, 'stuff3', ContentType.STRING, worker_id='c', work_ttl=60, track_entries=True)
+    >>> qc.clear()
+    >>> qc.push('hello')
+    >>> assert qc.contains('hello')
+    >>> assert qc.pop()
+    >>> assert qc.contains('hello')
+    >>> qc.complete('hello')
+    >>> assert not qc.contains('hello')
+    >>> qd = Queue(client, 'stuff4', ContentType.STRING, worker_id='c', work_ttl=60, track_entries=True, track_working_entries=False)
+    >>> qd.clear()
+    >>> qd.push('hello')
+    >>> assert qd.contains('hello')
+    >>> assert qd.pop()
+    >>> assert not qd.contains('hello')
+    >>> qd.complete('hello')
+    >>> assert not qd.contains('hello')
     >>> first = Queue(client, 'abc')
     >>> second = Queue(client, 'abc_errors')
     >>> first.clear()
@@ -113,6 +129,7 @@ class Queue(RedisBacked):
         self.strategy = kwargs.get('strategy', self.FIFO)
         assert self.strategy in (self.FIFO, self.LIFO)
         self.keep_entry_set = kwargs.get('track_entries', False)
+        self.keep_working_entry_set = kwargs.get('track_working_entries', True)
         self.work_ttl_seconds = kwargs.get('work_ttl', self.DEFAULT_WORK_TTL_SECONDS)
         self.pipes = dict(kwargs.get('pipes', []))
         for result_code, queue in self.pipes.iteritems():
@@ -210,13 +227,13 @@ class Queue(RedisBacked):
                 v = self.server.brpop(self.QUEUE_LIST_KEY)
             else:
                 v = self.server.rpop(self.QUEUE_LIST_KEY)
-            if v:
-                self.server.srem(self.ENTRY_SET_KEY, v)
         else:
             if blocking:
                 v = self.server.brpoplpush(self.QUEUE_LIST_KEY, self.WORKING_LIST_KEY)
             else:
                 v = self.server.rpoplpush(self.QUEUE_LIST_KEY, self.WORKING_LIST_KEY)
+        if v and (destructively or not self.keep_working_entry_set):
+            self.server.srem(self.ENTRY_SET_KEY, v)
         payload = self.server.hget(self.PAYLOADS, v)
         payload = self.unpack(payload)
         v = self.unpack(v)
