@@ -216,6 +216,9 @@ class Scheduler(RedisBacked):
     def count_scheduled(self):
         return self.server.zcard(self.SCHEDULED)
 
+    def count_in_progress(self):
+        return self.server.zcard(self.INPROGRESS)
+
     def is_expired(self, value):
         value = self.pack(value)
         expire_date = self.server.hget(self.EXPIRATIONS, value)
