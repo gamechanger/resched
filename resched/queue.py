@@ -104,6 +104,15 @@ class Queue(RedisBacked):
     'a'
     >>> second.pop()
     'aaa'
+    >>> recursive_queue = Queue(client, 'recursive_stuff', ContentType.STRING, track_entries=True, track_working_entries=False)
+    >>> recursive_queue.pipe('retry', recursive_queue)
+    >>> recursive_queue.push('a')
+    >>> assert recursive_queue.contains('a')
+    >>> recursive_queue.pop()
+    'a'
+    >>> assert not recursive_queue.contains('a')
+    >>> recursive_queue.complete('a', 'retry')
+    >>> assert recursive_queue.contains('a')
     >>> qe = Queue(client, 'stuff5', ContentType.STRING, worker_id='e', work_ttl=60, track_entries=True)
     >>> qe.clear()
     >>> qe.push('hello', 'payload1')
