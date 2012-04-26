@@ -104,6 +104,16 @@ class Queue(RedisBacked):
     'a'
     >>> second.pop()
     'aaa'
+    >>> qe = Queue(client, 'stuff5', ContentType.STRING, worker_id='e', work_ttl=60, track_entries=True)
+    >>> qe.clear()
+    >>> qe.push('hello', 'payload1')
+    >>> qe.size()
+    1
+    >>> qe.push('hello', 'payload2')
+    >>> qe.size()
+    1
+    >>> qe.pop()
+    'payload2'
     """
 
     FIFO = 'fifo'
@@ -205,15 +215,21 @@ class Queue(RedisBacked):
         with (pipeline or self.server.pipeline()) as pipe:
             value = self.pack(value)
             payload = self.pack(payload)
-            if self.strategy == self.FIFO:
-                pipe.lpush(self.QUEUE_LIST_KEY, value)
-            else:
-                pipe.rpush(self.QUEUE_LIST_KEY, value)
+            if self._is_pushable(value):
+                if self.strategy == self.FIFO:
+                    pipe.lpush(self.QUEUE_LIST_KEY, value)
+                else:
+                    pipe.rpush(self.QUEUE_LIST_KEY, value)
             if self.keep_entry_set:
                 pipe.sadd(self.ENTRY_SET_KEY, value)
             if payload:
                 pipe.hset(self.PAYLOADS, value, payload)
             pipe.execute()
+
+    def _is_pushable(self, value):
+        if not self.keep_entry_set:
+            return True
+        return not self.contains(value)
 
     def contains(self, value):
         value = self.pack(value)
