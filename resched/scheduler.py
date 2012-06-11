@@ -166,7 +166,7 @@ class Scheduler(RedisBacked):
                     if payload:
                         # the new hotness...
                         expire_time = self.server.hget(self.EXPIRATIONS, value)
-                        if expire_time and float(expire_time) > time_now:
+                        if expire_time and float(expire_time) < time_now:
                             self._clear_value(value, pipe)
                             continue
                         else:
