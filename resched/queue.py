@@ -123,6 +123,27 @@ class Queue(RedisBacked):
     1
     >>> qe.pop()
     'payload2'
+    >>> queue = Queue(client, 'add_tracking', ContentType.STRING, track_entries=True, track_add_attempts=True)
+    >>> queue.push('a')
+    >>> queue.size()
+    1
+    >>> queue.push('a')
+    >>> queue.size()
+    1
+    >>> queue.pop()
+    'a'
+    >>> queue.size()
+    0
+    >>> queue.complete('a')
+    >>> queue.size()
+    1
+    >>> queue.pop()
+    'a'
+    >>> queue.size()
+    0
+    >>> queue.complete('a')
+    >>> queue.size()
+    0
     """
 
     FIFO = 'fifo'
@@ -151,6 +172,7 @@ class Queue(RedisBacked):
         self.keep_working_entry_set = kwargs.get('track_working_entries', True)
         self.work_ttl_seconds = kwargs.get('work_ttl', self.DEFAULT_WORK_TTL_SECONDS)
         self.pipes = dict(kwargs.get('pipes', []))
+        self.track_add_attempts = kwargs.get('track_add_attempts', False)
         for result_code, queue in self.pipes.iteritems():
             assert isintance(result_code, basestring) and isinstance(queue, Queue)
 
@@ -160,6 +182,7 @@ class Queue(RedisBacked):
         self.WORKING_LIST_KEY = self._working_list_key()
         self.WORKING_ACTIVE_KEY = self._working_active_key()
         self.PAYLOADS = 'queue.{ns}.payload'.format(ns=namespace)
+        self.ADD_ATTEMPTS_SET = 'queue.{ns}.attempts'.format(ns=namespace)
 
 
     def pipe(self, result, queue):
@@ -220,17 +243,17 @@ class Queue(RedisBacked):
     def number_active_workers(self):
         return self.server.scard(self.WORKER_SET_KEY)
 
-    def push(self, value, payload=None, pipeline=None):
+    def push(self, value, payload=None, pipeline=None, check=True):
         with (pipeline or self.server.pipeline()) as pipe:
             value = self.pack(value)
             payload = self.pack(payload)
-            if self._is_pushable(value):
+            if not check or self._is_pushable(value):
                 if self.strategy == self.FIFO:
                     pipe.lpush(self.QUEUE_LIST_KEY, value)
                 else:
                     pipe.rpush(self.QUEUE_LIST_KEY, value)
-            if self.keep_entry_set:
-                pipe.sadd(self.ENTRY_SET_KEY, value)
+                if self.keep_entry_set:
+                    pipe.sadd(self.ENTRY_SET_KEY, value)
             if payload:
                 pipe.hset(self.PAYLOADS, value, payload)
             pipe.execute()
@@ -238,7 +261,12 @@ class Queue(RedisBacked):
     def _is_pushable(self, value):
         if not self.keep_entry_set:
             return True
-        return not self.contains(value)
+        if self.track_add_attempts:
+            self.server.sadd(self.ADD_ATTEMPTS_SET, value)
+        pushable = not self.contains(value)
+        if self.track_add_attempts and pushable:
+            self.server.srem(self.ADD_ATTEMPTS_SET, value)
+        return pushable
 
     def contains(self, value):
         value = self.pack(value)
@@ -287,15 +315,21 @@ class Queue(RedisBacked):
         @param result      An optional result string, which could trigger a queue transition.
         """
         self._on_activity()
-        with self.server.pipeline() as pipe:
-            value = self.pack(value)
-            pipe.lrem(self.WORKING_LIST_KEY, value)
-            pipe.srem(self.ENTRY_SET_KEY, value)
-            pipe.hdel(self.PAYLOADS, value)
-            if result and result in self.pipes:
-                payload = self.server.hget(self.PAYLOADS, value)
-                self.pipes[result].push(value, payload=payload, pipeline=pipe)
-            pipe.execute()
+        if self.track_add_attempts and self.server.srem(self.ADD_ATTEMPTS_SET, value):
+            with self.server.pipeline() as pipe:
+                value = self.pack(value)
+                pipe.lrem(self.WORKING_LIST_KEY, value)
+                self.push(value, pipeline=pipe, check=False)
+        else:
+            with self.server.pipeline() as pipe:
+                value = self.pack(value)
+                pipe.lrem(self.WORKING_LIST_KEY, value)
+                pipe.srem(self.ENTRY_SET_KEY, value)
+                pipe.hdel(self.PAYLOADS, value)
+                if result and result in self.pipes:
+                    payload = self.server.hget(self.PAYLOADS, value)
+                    self.pipes[result].push(value, payload=payload, pipeline=pipe)
+                pipe.execute()
 
     def noop(self):
         self._on_activity()
